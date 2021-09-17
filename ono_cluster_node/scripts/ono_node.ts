@@ -7,12 +7,12 @@ import * as fs from 'fs';
 
 const path = require('path');
 const hocon = require ("@pushcorn/hocon-parser");
+let ONO_MASTER_URI = "http://10.96.5.6:6001/home";
 
 let KUBE_POD_NAME = "ono-node";
 let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
 let KUBE_POD_PORT = 6001;
 let KUBE_SRV_PORT = 6001;
-let KUBE_SRV_IP = "10.96.5.6";
 let KUBE_SRV_NAME = `${KUBE_POD_NAME}-srv`;
 let KUBE_ING_NAME = `${KUBE_SRV_NAME}-i`;
 let KUBE_NAMESPACE = "test";
@@ -46,8 +46,9 @@ async function test(){
     //console.log("a/b/c/d".split("/").slice(-1)[0]);
     let config = await getConfig();
     let masterUri = config.ono.cluster.node.masterUri;
+
     
-    console.log("masteruri", masterUri);
+    console.log("masteruri", config);
 
 }
 
@@ -60,12 +61,26 @@ function tmpFilePath() {
 async function build(args:string[]) {
     console.log("build", args);
 
-    let config = await getConfig();
-    let masterUri = config.ono.cluster.node.masterUri;  
 
     await $`mkdir -p ${dockerDirPath}`;
     await $`cp ${jarPath} ${dockerDirPath}`;
-    await $`cp ${appConfPath} ${dockerDirPath}`;
+    //await $`cp ${appConfPath} ${dockerDirPath}`;
+    
+    let appConfContent = `
+    ono {
+        cluster {
+            node {
+                masterUri="${ONO_MASTER_URI}"
+            }
+        }
+    }`;
+    fs.writeFile(`${dockerDirPath}/application.conf`, appConfContent, function (err:any) {
+      if (err) 
+          return console.log(err);
+      else 
+          //$`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
+          $`cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
+    });
 
 let dockerfileContent=`
 FROM openjdk:8
@@ -74,7 +89,7 @@ WORKDIR /app
 COPY ${JARFILE}  /app
 COPY application.conf  /app
 EXPOSE ${KUBE_POD_PORT}
-CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
+CMD ["java", "-cp", "/app/${JARFILE}", "-Dconfig.file=/app/application.conf",  "${MAINCLASS}"]
 `;
 
 
@@ -250,6 +265,18 @@ function kube_pod_shell(args:any) {
     $`kubectl exec --stdin --tty ${podName} -n ${namespace} -- /bin/bash`;
 }
 
+function sbt(args:any) {
+    if (args.length==0) {
+        $`cd ${rootProjectPath} && sbt`;
+        return;
+    }
+    if (args[0]=="runMain"){
+        let sbtArgs = args.slice(1).join(" ");
+        $`cd ${rootProjectPath} && sbt "${projectName}/runMain ${sbtArgs}"`;
+    }
+
+}
+
 function run(){
     if (process.argv.length<3){
         console.log(`usage: ts-node ${process.argv[1]} [build|run_docker|kube_deploy] `);
@@ -278,8 +305,12 @@ function run(){
         kube_del_service(args);
     if (command=="kube_del_ingress")
         kube_del_ingress(args);
+    if (command=="kube_del_deploy")
+        kube_del_deploy(args);
     if (command=="kube_pod_shell")
         kube_pod_shell(args);
+    if (command=="sbt")
+        sbt(args);
 
 
 }
