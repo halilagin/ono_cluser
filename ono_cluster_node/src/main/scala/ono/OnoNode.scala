@@ -12,32 +12,36 @@ import com.typesafe.config.ConfigFactory
 import com.typesafe.config.Config
 
 object  OnoNode extends App{
+  val mainThread = Thread.currentThread
+  ConfigFactory.invalidateCaches()
+  //call ConfigFactory.load() for dynamic load of application.conf with -Dconfig.file=
+  var conf:Config  = ConfigFactory.load();
 
+  def overrideConfigWithCmdArgs(): Unit = {
+    args.filter(_.contains("conf_from")==false).foreach { c =>
+      val myConfig = ConfigFactory.parseString(c)
+      println("changing conf", c)
+      conf = myConfig.withFallback(conf)
 
-  val conf:Config  = ConfigFactory.load("application.conf");
-  conf.getObject("ono").for{ (k,v) => 
-    println(k,v)
+    }
   }
 
+  // setup config with applicaiton.conf or with command line arguments
+  args.filter(x => x.contains("conf_from=")).headOption match {
+    case Some(arg) => arg.split("=")(1) match {
+      case "cmd" => overrideConfigWithCmdArgs()
+      case _ => //use default application.conf
+    }
+    case None => ; //"no command arg passed"
+  }
+  // conf variable is set now.
 
-
-  args.map(println)
-
-
-  val mainThread = Thread.currentThread
-
-  //implicit val system = ActorSystem("system")
   implicit val system = ActorSystem(Behaviors.empty, "SingleRequest")
   implicit val executionContext = system.executionContext
-
-
-  val java_env = System.getenv("ONO_MASTER_URI")
-  println("java_env", java_env)
-  val ono_master_uri:String =  sys.env.getOrElse("ONO_MASTER_URI", "http://10.96.5.6:8080/home")
-  println(s"ONO_MASTER_URI:", ono_master_uri)
-
+  val masterUri = conf.getString("ono.cluster.node.masterUri")
+  println("masterUri", masterUri)
   //val responseFuture: Future[HttpResponse] = Http().singleRequest(HttpRequest(uri = "http://10.96.5.6:8080/home"))
-  val responseFuture: Future[HttpResponse] = Http().singleRequest(HttpRequest(uri = ono_master_uri))
+  val responseFuture: Future[HttpResponse] = Http().singleRequest(HttpRequest(uri = masterUri))
 
   responseFuture
   .onComplete {

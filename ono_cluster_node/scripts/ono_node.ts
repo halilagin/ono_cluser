@@ -6,6 +6,7 @@ import {tmpdir} from 'os';
 import * as fs from 'fs';
 
 const path = require('path');
+const hocon = require ("@pushcorn/hocon-parser");
 
 let KUBE_POD_NAME = "ono-node";
 let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
@@ -28,10 +29,26 @@ let dockerDirPath = `${rootDockerDirPath}/${projectName}/${KUBE_POD_NAME}`;
 let dockerPath = `${dockerDirPath}/Dockerfile`;
 let jarPath = `${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
 let rootDockerEnvPath = `${rootDockerDirPath}/docker.env`;
+let appConfPath=`${projectPath}/src/main/resources/application.conf`;
 
 
-function test(){
-    console.log("a/b/c/d".split("/").slice(-1)[0]);
+
+async function getConfig(){
+    let appCmd = await $`cat ${appConfPath}`;
+    let applicationConfContent = appCmd["stdout"];
+    let config = await hocon({text:applicationConfContent, strict:true}).then((config:any) => {
+        return config;
+    });
+    return config;
+}
+
+async function test(){
+    //console.log("a/b/c/d".split("/").slice(-1)[0]);
+    let config = await getConfig();
+    let masterUri = config.ono.cluster.node.masterUri;
+    
+    console.log("masteruri", masterUri);
+
 }
 
     
@@ -43,14 +60,19 @@ function tmpFilePath() {
 async function build(args:string[]) {
     console.log("build", args);
 
+    let config = await getConfig();
+    let masterUri = config.ono.cluster.node.masterUri;  
+
     await $`mkdir -p ${dockerDirPath}`;
     await $`cp ${jarPath} ${dockerDirPath}`;
+    await $`cp ${appConfPath} ${dockerDirPath}`;
 
 let dockerfileContent=`
 FROM openjdk:8
 RUN mkdir -p /app
 WORKDIR /app
 COPY ${JARFILE}  /app
+COPY application.conf  /app
 EXPOSE ${KUBE_POD_PORT}
 CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
 `;
@@ -61,7 +83,8 @@ CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
       if (err) 
           return console.log(err);
       else 
-          $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
+          //$`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
+          $`cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
     });
 
     return true;
