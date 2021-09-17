@@ -7,24 +7,32 @@ import * as fs from 'fs';
 
 const path = require('path');
 
-
-let KUBE_POD_NAME="akka-staticip"
-let KUBE_POD_PORT=8080
-let KUBE_SRV_PORT=8080
-let KUBE_SRV_NAME=`${KUBE_POD_NAME}-srv`
-let KUBE_ING_NAME=`${KUBE_SRV_NAME}-i`
-let KUBE_NAMESPACE="test"
-var DOCKERTAG=`onomoly/${KUBE_POD_NAME}:0.0.1`;
-let JARFILE="akka_http.jar";
-let SCALA_VERSION="2.13";
-let MAINCLASS="part3_highlevelhttp.HigLevelHttp";
+let KUBE_POD_NAME = "ono-node";
+let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
+let KUBE_POD_PORT = 6001;
+let KUBE_SRV_PORT = 6001;
+let KUBE_SRV_IP = "10.96.5.6";
+let KUBE_SRV_NAME = `${KUBE_POD_NAME}-srv`;
+let KUBE_ING_NAME = `${KUBE_SRV_NAME}-i`;
+let KUBE_NAMESPACE = "test";
+var DOCKERTAG = `onomoly/${KUBE_POD_NAME}:0.0.1`;
+let JARFILE = "ono_cluster_node.jar";
+let SCALA_VERSION = "2.13";
+let MAINCLASS = "ono.OnoNode";
 let script_path = path.dirname(__filename);
-let projectPath=script_path.split("/").slice(0,-1).join("/");
-let dockerDirPath=`${projectPath}/docker/${KUBE_POD_NAME}`;
-let dockerPath=`${dockerDirPath}/Dockerfile`;
-let jarPath=`${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
+let rootProjectPath = script_path.split("/").slice(0,-2).join("/");
+let projectPath = script_path.split("/").slice(0,-1).join("/");
+let projectName = projectPath.split("/").slice(-1)[0];
+let rootDockerDirPath = `${rootProjectPath}/docker`;
+let dockerDirPath = `${rootDockerDirPath}/${projectName}/${KUBE_POD_NAME}`;
+let dockerPath = `${dockerDirPath}/Dockerfile`;
+let jarPath = `${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
+let rootDockerEnvPath = `${rootDockerDirPath}/docker.env`;
 
 
+function test(){
+    console.log("a/b/c/d".split("/").slice(-1)[0]);
+}
 
     
 function tmpFilePath() {
@@ -32,11 +40,11 @@ function tmpFilePath() {
     return path_
 }
 
-function build(args:string[]) {
+async function build(args:string[]) {
     console.log("build", args);
 
-    $`mkdir -p ${dockerDirPath}`;
-    $`cp ${jarPath} ${dockerDirPath}`;
+    await $`mkdir -p ${dockerDirPath}`;
+    await $`cp ${jarPath} ${dockerDirPath}`;
 
 let dockerfileContent=`
 FROM openjdk:8
@@ -50,10 +58,12 @@ CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
 
     console.log("docker file path", dockerPath);
     fs.writeFile(dockerPath, dockerfileContent, function (err:any) {
-      if (err) return console.log(err);
+      if (err) 
+          return console.log(err);
+      else 
+          $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
     return true;
 }
 
@@ -75,7 +85,7 @@ let template = `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ${KUBE_POD_NAME}
+  name: ${KUBE_DEP_NAME}
   namespace: ${KUBE_NAMESPACE}
   labels:
     app: ${KUBE_POD_NAME}
@@ -103,10 +113,13 @@ spec:
 
     let tempFilePath = tmpFilePath();
     fs.writeFile(tempFilePath, template, function (err:any) {
-      if (err) return console.log(err);
+      if (err) 
+          return console.log(err);
+      else
+        $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl apply -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
+
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl apply -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
     return true;
 }
 
@@ -120,9 +133,11 @@ function kube_getpod(args:any) {
 }
 
 
-function kube_deploy_service(args:any) {
+async function kube_deploy_service(args:any) {
     var ip = require("ip");
     let ipAddress = ip.address();
+    let onoMasterIpAddr =  await $`cat ${rootDockerEnvPath} | grep ono_master_cluster_ip|cut -d= -f2`;
+    console.log("onoMasterIpAddr", onoMasterIpAddr["stdout"]);
 
 let template = `
 apiVersion: v1
@@ -138,7 +153,7 @@ spec:
     targetPort: ${KUBE_POD_PORT}
   #type: NodePort 
   type: LoadBalancer 
-  clusterIP: 10.96.5.5
+  #clusterIP: ${onoMasterIpAddr}
   externalIPs:
   - ${ipAddress}
   #type: ClusterIP 
@@ -148,10 +163,12 @@ spec:
 `
     let tempFilePath = tmpFilePath();
     fs.writeFile(tempFilePath, template, function (err:any) {
-      if (err) return console.log(err);
+        if (err) 
+            return console.log(err);
+        else
+        $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
     return true;
 }
 
@@ -186,6 +203,10 @@ spec:
     return true;
 }
 
+function kube_del_deploy(args:any){
+    $` kubectl delete deploy -n ${KUBE_NAMESPACE} ${KUBE_DEP_NAME}`;
+    return true;
+}
 function kube_del_service(args:any){
     $` kubectl delete service -n ${KUBE_NAMESPACE} ${KUBE_SRV_NAME}`;
     return true;
@@ -214,6 +235,8 @@ function run(){
 
     let command=process.argv[2];
     let args=process.argv.slice(3);
+    if (command=="test")
+        test();
     if (command=="build")
         build(args);
     if (command=="run_docker")
@@ -234,6 +257,7 @@ function run(){
         kube_del_ingress(args);
     if (command=="kube_pod_shell")
         kube_pod_shell(args);
+
 
 }
 

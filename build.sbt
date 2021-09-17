@@ -9,6 +9,8 @@ scalaVersion in ThisBuild := "2.13.1"
 //connectInput in run := true
 
 version := "0.0.1"
+fork := true
+envVars := Map("ONO_MASTER_URI" -> "http://www.google.com")
 
 lazy val dependencies =
 	new {
@@ -19,17 +21,20 @@ lazy val dependencies =
 		val slf4jV						= "1.7.30"
 		val jacksonV					= "2.11.1"
 		val yamlV							= "1.27"
+		val typesafeConfigV							= "1.4.1"
 
     val logback                 = "ch.qos.logback"                      %       "logback-classic"               % logbackV
     val slf4j                   = "org.slf4j"                           %       "slf4j-api"                     % slf4jV
     val akkaActor               = "com.typesafe.akka"                   %%      "akka-actor"                    % akkaV
     val akkaStream              = "com.typesafe.akka"                   %%      "akka-stream"                   % akkaV
+    val akkaActorTyped          = "com.typesafe.akka"                   %%      "akka-actor-typed"              % akkaV
     val akkaStreamTestKit       = "com.typesafe.akka"                   %%      "akka-stream-testkit"           % akkaV
     val akkaHTTP                = "com.typesafe.akka"                   %%       "akka-http"                    % akkaHTTPV
     val akkaHttpSprayJson       = "com.typesafe.akka"                   %%       "akka-http-spray-json"         % akkaHTTPV
     val akkaHttpTestKit         = "com.typesafe.akka"                   %%       "akka-http-spray-json"         % akkaHTTPV
 
     val akkaSlf4j               = "com.typesafe.akka"                   %%      "akka-slf4j"                    % akkaV
+    val typesafeConfig          =  "com.typesafe"                       %       "config"                        % typesafeConfigV 
     val scalatest               = "org.scalatest"                       %%      "scalatest"                     % scalatestV
     val jackson                 = "com.fasterxml.jackson.core"          %       "jackson-core"                  % jacksonV
     val jacksonDataformatYaml   = "com.fasterxml.jackson.dataformat"    %       "jackson-dataformat-yaml"       % jacksonV
@@ -44,11 +49,13 @@ val serviceDependencies = Seq()
 val webDependencies = Seq()
 val akkaTrainingDependencies = Seq(
   dependencies.akkaActor,
+  dependencies.akkaActorTyped,
   dependencies.akkaStream,
   dependencies.akkaHTTP,
   dependencies.akkaHttpSprayJson,
   dependencies.akkaHttpTestKit,
   dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
   dependencies.jackson,
   dependencies.logback,
   dependencies.scalatest,
@@ -58,11 +65,13 @@ val akkaTrainingDependencies = Seq(
 
 val onoClusterMasterDependencies = Seq(
   dependencies.akkaActor,
+  dependencies.akkaActorTyped,
   dependencies.akkaStream,
   dependencies.akkaHTTP,
   dependencies.akkaHttpSprayJson,
   dependencies.akkaHttpTestKit,
   dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
   dependencies.jackson,
   dependencies.logback,
   dependencies.scalatest,
@@ -70,6 +79,22 @@ val onoClusterMasterDependencies = Seq(
   dependencies.yaml
 )
 
+
+val onoClusterNodeDependencies = Seq(
+  dependencies.akkaActor,
+  dependencies.akkaActorTyped,
+  dependencies.akkaStream,
+  dependencies.akkaHTTP,
+  dependencies.akkaHttpSprayJson,
+  dependencies.akkaHttpTestKit,
+  dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
+  dependencies.jackson,
+  dependencies.logback,
+  dependencies.scalatest,
+  dependencies.akkaStreamTestKit,
+  dependencies.yaml
+)
 
 
 resolvers ++= Seq (
@@ -179,6 +204,17 @@ lazy val onoClusterMasterAssemblySettings = Seq(
   }
 )
 
+lazy val onoClusterNodeAssemblySettings = Seq(
+  assemblyJarName in assembly := name.value + ".jar",
+  assemblyMergeStrategy in assembly := {
+    case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+    case "application.conf"            => MergeStrategy.concat
+    case x =>
+      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  }
+)
+
 
 lazy val global = project
   .in(file("."))
@@ -191,7 +227,8 @@ lazy val global = project
 //    web
     //akka_http,
     //akka_streams,
-    ono_cluster_master
+    ono_cluster_master,
+    ono_cluster_node
   )
 
 
@@ -267,6 +304,17 @@ lazy val ono_cluster_master = project
     settings,
     onoClusterMasterAssemblySettings,
     libraryDependencies ++= onoClusterMasterDependencies,
+  )
+  //.disablePlugins(AssemblyPlugin)
+  //.dependsOn(service)
+
+lazy val ono_cluster_node = project
+  .in(file("ono_cluster_node"))
+  .settings(
+    name := "ono_cluster_node",
+    settings,
+    onoClusterNodeAssemblySettings,
+    libraryDependencies ++= onoClusterNodeDependencies,
   )
   //.disablePlugins(AssemblyPlugin)
   //.dependsOn(service)

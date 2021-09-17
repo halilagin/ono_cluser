@@ -1,4 +1,4 @@
-package part3_highlevelhttp
+package http
 
 import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown}
@@ -13,7 +13,7 @@ import scala.concurrent.duration._
 import scala.io.StdIn
 import scala.util.control.Breaks.break
 
-object  HigLevelHttp extends App{
+object  MainGateway extends App{
   val mainThread = Thread.currentThread
 
   implicit val system = ActorSystem("system")
@@ -27,7 +27,7 @@ object  HigLevelHttp extends App{
         complete(HttpEntity(
           ContentTypes.`text/html(UTF-8)`,
           """
-            |<html><body style='color:red;'>hello!</body></html>
+            |<html><body style='color:red;'>Ono Cluster MainGateway</body></html>
             |""".stripMargin
         ))
       } ~
@@ -94,13 +94,14 @@ object  HigLevelHttp extends App{
       }
 
 
-  val binding: Future[Http.ServerBinding] = Http().bindAndHandle(routes, "0.0.0.0", 8080)
+  val binding: Future[Http.ServerBinding] = Http().bindAndHandle(routes, "0.0.0.0", 6001)
 
 
   println("binding!")
 //  val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes)
 //    .map(_.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds))
 
+  println("send commind to server: [stop]")
   while (true) {
     val input: String = StdIn.readLine()
     //if (input != "stop")

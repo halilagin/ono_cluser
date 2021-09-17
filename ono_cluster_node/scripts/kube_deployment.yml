@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: akka-http-test
+  namespace: test
+  labels:
+    app: akka-http-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: akka-http-test
+  template:
+    metadata:
+      labels:
+        app: akka-http-test
+    spec:
+      containers:
+      - name: akka-http-test
+        image: onomoly/akka_http_training:0.0.1
+        imagePullPolicy: Never
+        env:
+        - name: APP_LIB_DIR
+          value: "./lib"
+        ports:
+        - containerPort: 8080
+          name: akka-http-test
+

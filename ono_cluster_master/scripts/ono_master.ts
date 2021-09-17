@@ -7,23 +7,32 @@ import * as fs from 'fs';
 
 const path = require('path');
 
-
-let KUBE_POD_NAME="akka-http-test"
-let KUBE_SRV_PORT=8080
-let KUBE_SRV_NAME=`${KUBE_POD_NAME}-srv`
-let KUBE_ING_NAME=`${KUBE_SRV_NAME}-i`
-let KUBE_NAMESPACE="test"
-var DOCKERTAG="onomoly/akka_http_training:0.0.1";
-let JARFILE="akka_http.jar";
-let SCALA_VERSION="2.13";
-let MAINCLASS="part3_highlevelhttp.HigLevelHttp";
+let KUBE_POD_NAME = "ono-master";
+let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
+let KUBE_POD_PORT = 6001;
+let KUBE_SRV_PORT = 6001;
+let KUBE_SRV_IP = "10.96.5.6";
+let KUBE_SRV_NAME = `${KUBE_POD_NAME}-srv`;
+let KUBE_ING_NAME = `${KUBE_SRV_NAME}-i`;
+let KUBE_NAMESPACE = "test";
+var DOCKERTAG = `onomoly/${KUBE_POD_NAME}:0.0.1`;
+let JARFILE = "ono_cluster_master.jar";
+let SCALA_VERSION = "2.13";
+let MAINCLASS = "http.MainGateway";
 let script_path = path.dirname(__filename);
-let projectPath=script_path.split("/").slice(0,-1).join("/");
-let dockerDirPath=`${projectPath}/docker`;
-let dockerPath=`${dockerDirPath}/Dockerfile`;
-let jarPath=`${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
+let rootProjectPath = script_path.split("/").slice(0,-2).join("/");
+let projectPath = script_path.split("/").slice(0,-1).join("/");
+let projectName = projectPath.split("/").slice(-1)[0];
+let rootDockerDirPath = `${rootProjectPath}/docker`;
+let dockerDirPath = `${rootDockerDirPath}/${projectName}/${KUBE_POD_NAME}`;
+let dockerPath = `${dockerDirPath}/Dockerfile`;
+let jarPath = `${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
+let rootDockerEnvPath = `${rootDockerDirPath}/docker.env`;
 
 
+function test(){
+    console.log("a/b/c/d".split("/").slice(-1)[0]);
+}
 
     
 function tmpFilePath() {
@@ -31,26 +40,31 @@ function tmpFilePath() {
     return path_
 }
 
-function build(args:string[]) {
+async function build(args:string[]) {
     console.log("build", args);
 
-    $`mkdir -p ${dockerDirPath}`;
-    $`cp ${jarPath} ${dockerDirPath}`;
+    await $`mkdir -p ${dockerDirPath}`;
+    await $`cp ${jarPath} ${dockerDirPath}`;
 
 let dockerfileContent=`
 FROM openjdk:8
 RUN mkdir -p /app
 WORKDIR /app
 COPY ${JARFILE}  /app
-EXPOSE 8080
+EXPOSE ${KUBE_POD_PORT}
 CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
 `;
 
+
+    console.log("docker file path", dockerPath);
     fs.writeFile(dockerPath, dockerfileContent, function (err:any) {
-      if (err) return console.log(err);
+      if (err) 
+          return console.log(err);
+      else 
+          $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && docker build -t ${DOCKERTAG} .`;
+    return true;
 }
 
 
@@ -60,7 +74,8 @@ function run_docker(args:any){
         console.log(`usage: zx ${process.argv[2]} run_docker <docker_container_name> `);
         return;
     }
-    $`docker run --rm -p 8080:8080 --name ${container_name} ${DOCKERTAG}`;
+    $`eval $(minikube -p minikube docker-env) && docker run --rm -p ${KUBE_POD_PORT}:${KUBE_POD_PORT} --name ${container_name} ${DOCKERTAG}`;
+    return true;
 }
 
 
@@ -70,8 +85,8 @@ let template = `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ${KUBE_POD_NAME}
-  namespace: test
+  name: ${KUBE_DEP_NAME}
+  namespace: ${KUBE_NAMESPACE}
   labels:
     app: ${KUBE_POD_NAME}
 spec:
@@ -86,22 +101,26 @@ spec:
     spec:
       containers:
       - name: ${KUBE_POD_NAME}
-        image: onomoly/akka_http_training:0.0.1
+        image: ${DOCKERTAG}
         imagePullPolicy: Never
         env:
         - name: APP_LIB_DIR
           value: "./lib"
         ports:
-        - containerPort: 8080
+        - containerPort: ${KUBE_POD_PORT}
           name: ${KUBE_POD_NAME}
 `;
 
     let tempFilePath = tmpFilePath();
     fs.writeFile(tempFilePath, template, function (err:any) {
-      if (err) return console.log(err);
+      if (err) 
+          return console.log(err);
+      else
+        $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl apply -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
+
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl apply -f ${tempFilePath} -n test`;
+    return true;
 }
 
 function kube_describe(args:any) {
@@ -110,12 +129,15 @@ function kube_describe(args:any) {
 
 function kube_getpod(args:any) {
     $`kubectl get pods -n ${KUBE_NAMESPACE} |grep ${KUBE_POD_NAME}`
+    return true;
 }
 
 
-function kube_deploy_service(args:any) {
+async function kube_deploy_service(args:any) {
     var ip = require("ip");
     let ipAddress = ip.address();
+    let onoMasterIpAddr =  await $`cat ${rootDockerEnvPath} | grep ono_master_cluster_ip|cut -d= -f2`;
+    console.log("onoMasterIpAddr", onoMasterIpAddr["stdout"]);
 
 let template = `
 apiVersion: v1
@@ -128,9 +150,10 @@ metadata:
 spec:
   ports:
   - port: ${KUBE_SRV_PORT}
-    name: ${KUBE_POD_NAME}
+    targetPort: ${KUBE_POD_PORT}
   #type: NodePort 
   type: LoadBalancer 
+  clusterIP: ${onoMasterIpAddr}
   externalIPs:
   - ${ipAddress}
   #type: ClusterIP 
@@ -140,11 +163,15 @@ spec:
 `
     let tempFilePath = tmpFilePath();
     fs.writeFile(tempFilePath, template, function (err:any) {
-      if (err) return console.log(err);
+        if (err) 
+            return console.log(err);
+        else
+        $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n test`;
+    return true;
 }
+
 
 function kube_deploy_ingress(args:any) {
     let template=`
@@ -159,27 +186,45 @@ spec:
     - host: akka-http-test.kube
       http:
         paths:
-          - path: /service1
+          - path: /
             pathType: Prefix
             backend:
               service:
                 name: ${KUBE_SRV_NAME}
                 port:
-                  number: 8080
+                  number: ${KUBE_SRV_PORT}
 `;
     let tempFilePath = tmpFilePath();
     fs.writeFile(tempFilePath, template, function (err:any) {
       if (err) return console.log(err);
     });
 
-    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n test`;
+    $`eval $(minikube -p minikube docker-env) && cd ${dockerDirPath} && kubectl create -f ${tempFilePath} -n ${KUBE_NAMESPACE}`;
+    return true;
 }
 
+function kube_del_deploy(args:any){
+    $` kubectl delete deploy -n ${KUBE_NAMESPACE} ${KUBE_DEP_NAME}`;
+    return true;
+}
 function kube_del_service(args:any){
     $` kubectl delete service -n ${KUBE_NAMESPACE} ${KUBE_SRV_NAME}`;
+    return true;
 }
 function kube_del_ingress(args:any){
     $` kubectl delete ingress -n ${KUBE_NAMESPACE} ${KUBE_ING_NAME}`;
+    return true;
+}
+
+function kube_pod_shell(args:any) {
+//kubectl exec --stdin --tty shell-demo -- /bin/bash
+    let namespace=args[0];
+    let podName=args[1];
+    if (podName==undefined || podName==null || podName.trim()==""){
+        console.log(`usage: zx ${process.argv[2]} kube_pod_shell <namespace> <pod_name> `);
+        return;
+    }
+    $`kubectl exec --stdin --tty ${podName} -n ${namespace} -- /bin/bash`;
 }
 
 function run(){
@@ -190,6 +235,8 @@ function run(){
 
     let command=process.argv[2];
     let args=process.argv.slice(3);
+    if (command=="test")
+        test();
     if (command=="build")
         build(args);
     if (command=="run_docker")
@@ -208,6 +255,9 @@ function run(){
         kube_del_service(args);
     if (command=="kube_del_ingress")
         kube_del_ingress(args);
+    if (command=="kube_pod_shell")
+        kube_pod_shell(args);
+
 
 }
 
