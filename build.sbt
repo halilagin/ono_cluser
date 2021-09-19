@@ -96,6 +96,35 @@ val onoClusterNodeDependencies = Seq(
   dependencies.yaml
 )
 
+val onoClusterClientDependencies = Seq(
+  dependencies.akkaActor,
+  dependencies.akkaActorTyped,
+  dependencies.akkaStream,
+  dependencies.akkaHTTP,
+  dependencies.akkaHttpSprayJson,
+  dependencies.akkaHttpTestKit,
+  dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
+  dependencies.jackson,
+  dependencies.logback,
+  dependencies.scalatest,
+  dependencies.akkaStreamTestKit,
+  dependencies.yaml
+)
+
+val onoUtilDependencies = Seq(
+  dependencies.akkaHTTP,
+  dependencies.akkaHttpSprayJson,
+  dependencies.akkaHttpTestKit,
+  dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
+  dependencies.jackson,
+  dependencies.logback,
+  dependencies.scalatest,
+  dependencies.akkaStreamTestKit,
+  dependencies.yaml
+)
+
 
 resolvers ++= Seq (
   Opts.resolver.sbtIvySnapshots,
@@ -155,6 +184,17 @@ lazy val daoAssemblySettings = Seq(
       oldStrategy(x)
   }
 )
+lazy val onoUtilAssemblySettings = Seq(
+  assemblyJarName in assembly := name.value + ".jar",
+  assemblyMergeStrategy in assembly := {
+    case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+    case "application.conf"            => MergeStrategy.concat
+    case x =>
+      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  }
+)
+
 
 
 lazy val serviceAssemblySettings = Seq(
@@ -215,12 +255,23 @@ lazy val onoClusterNodeAssemblySettings = Seq(
   }
 )
 
+lazy val onoClusterClientAssemblySettings = Seq(
+  assemblyJarName in assembly := name.value + ".jar",
+  assemblyMergeStrategy in assembly := {
+    case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+    case "application.conf"            => MergeStrategy.concat
+    case x =>
+      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  }
+)
 
 lazy val global = project
   .in(file("."))
   .settings(settings)
   .disablePlugins(AssemblyPlugin)
   .aggregate(
+    util,
 //    model,
 //    dao,
 //    service,
@@ -228,7 +279,8 @@ lazy val global = project
     //akka_http,
     //akka_streams,
     ono_cluster_master,
-    ono_cluster_node
+    ono_cluster_node,
+    ono_cluster_client
   )
 
 
@@ -263,6 +315,16 @@ lazy val dao = project
   //.disablePlugins(AssemblyPlugin)
 	.dependsOn(model)
 
+lazy val util = project
+  .in(file("util"))
+  .settings(
+    name := "util",
+    settings,
+		onoUtilAssemblySettings,
+    libraryDependencies ++= onoUtilDependencies,
+  )
+  //.disablePlugins(AssemblyPlugin)
+  //.dependsOn(model)
 
 lazy val service = project
   .in(file("service"))
@@ -306,7 +368,7 @@ lazy val ono_cluster_master = project
     libraryDependencies ++= onoClusterMasterDependencies,
   )
   //.disablePlugins(AssemblyPlugin)
-  //.dependsOn(service)
+  .dependsOn(util)
 
 lazy val ono_cluster_node = project
   .in(file("ono_cluster_node"))
@@ -317,8 +379,29 @@ lazy val ono_cluster_node = project
     libraryDependencies ++= onoClusterNodeDependencies,
   )
   //.disablePlugins(AssemblyPlugin)
-  //.dependsOn(service)
+  .dependsOn(util)
 
+lazy val ono_cluster_client = project
+  .in(file("ono_cluster_client"))
+  .settings(
+    name := "ono_cluster_client",
+    settings,
+    onoClusterClientAssemblySettings,
+    libraryDependencies ++= onoClusterClientDependencies,
+  )
+  //.disablePlugins(AssemblyPlugin)
+  .dependsOn(util)
+
+lazy val ono_util = project
+  .in(file("ono_util"))
+  .settings(
+    name := "ono_util",
+    settings,
+    onoUtilAssemblySettings,
+    libraryDependencies ++= onoUtilDependencies,
+  )
+  //.disablePlugins(AssemblyPlugin)
+  //.dependsOn()
 
 
 lazy val akka_streams = project

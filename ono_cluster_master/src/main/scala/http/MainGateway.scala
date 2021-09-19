@@ -7,6 +7,8 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpRequest, StatusCodes}
 import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
+import com.typesafe.config.Config
+import ono.util.ConfigManager
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -16,13 +18,20 @@ import scala.util.control.Breaks.break
 object  MainGateway extends App{
   val mainThread = Thread.currentThread
 
+  private val config: Config = ConfigManager.read(args)
+
+
+
   implicit val system = ActorSystem("system")
   implicit  val materializer = ActorMaterializer()
   import system.dispatcher
   import akka.http.scaladsl.server.Directives._
 
+  val promptUrl = config.getString("ono.cluster.master.promptUrl")
+  println("prompturl", promptUrl)
+
   val routes: Route =
-    path ("home"){
+    path (promptUrl){
       get {
         complete(HttpEntity(
           ContentTypes.`text/html(UTF-8)`,
@@ -94,7 +103,7 @@ object  MainGateway extends App{
       }
 
 
-  val binding: Future[Http.ServerBinding] = Http().bindAndHandle(routes, "0.0.0.0", 6001)
+  val binding: Future[Http.ServerBinding] = Http().bindAndHandle(routes, config.getString("ono.cluster.master.host"), config.getInt("ono.cluster.master.port"))
 
 
   println("binding!")
