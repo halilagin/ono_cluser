@@ -60,6 +60,31 @@ val modelDependencies = Seq()
 val daoDependencies = Seq()
 val serviceDependencies = Seq()
 val webDependencies = Seq()
+val kube_akka_word_wordcount_cluster_dependencies = Seq(
+  dependencies.akkaActor,
+  dependencies.akkaSerialization,
+  //dependencies.akkaActorTyped,
+  dependencies.akkaStream,
+  dependencies.akkaRemoteAeronDriver,
+  dependencies.akkaRemoteAeronClient,
+  dependencies.akkaRemote,
+  dependencies.akkaHTTP,
+  dependencies.akkaHttpSprayJson,
+  dependencies.akkaHttpTestKit,
+  dependencies.akkaSlf4j,
+  dependencies.typesafeConfig,
+  dependencies.jackson,
+  dependencies.jacksonDatabind,
+  dependencies.logback,
+  dependencies.scalatest,
+  dependencies.akkaStreamTestKit,
+  dependencies.akkaCluster,
+  dependencies.akkaClusterSharding,
+  dependencies.akkaClusterTools,
+  //dependencies.akkaClusterTyped,
+  dependencies.yaml
+)
+
 val akkaTrainingDependencies = Seq(
   dependencies.akkaActor,
   dependencies.akkaSerialization,
@@ -198,6 +223,16 @@ lazy val commonSettings = Seq(
 
 lazy val settings = commonSettings 
 
+lazy val kube_akka_word_wordcount_cluster_assemblySettings = Seq(
+  assemblyJarName in assembly := name.value + ".jar",
+  assemblyMergeStrategy in assembly := {
+    case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+    case "application.conf"            => MergeStrategy.concat
+    case x =>
+      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  }
+)
 
 lazy val assemblySettings = Seq(
   assemblyJarName in assembly := name.value + ".jar",
@@ -330,7 +365,8 @@ lazy val global = project
     //akka_streams,
     ono_cluster_master,
     ono_cluster_node,
-    ono_cluster_client
+    ono_cluster_client,
+    kube_akka_word_wordcount_cluster
   )
 
 
@@ -461,4 +497,12 @@ lazy val akka_streams = project
     settings,
     akkaAssemblySettings,
     libraryDependencies ++= akkaTrainingDependencies,
+  )
+lazy val kube_akka_word_wordcount_cluster = project
+  .in(file("kube_akka_word_wordcount_cluster"))
+  .settings(
+    name := "kube_akka_word_wordcount_cluster",
+    settings,
+    kube_akka_word_wordcount_cluster_assemblySettings,
+    libraryDependencies ++= kube_akka_word_wordcount_cluster_dependencies,
   )
