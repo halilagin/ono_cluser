@@ -60,7 +60,7 @@ val modelDependencies = Seq()
 val daoDependencies = Seq()
 val serviceDependencies = Seq()
 val webDependencies = Seq()
-val kube_akka_word_wordcount_cluster_dependencies = Seq(
+val kube_akka_wordcount_cluster_dependencies = Seq(
   dependencies.akkaActor,
   dependencies.akkaSerialization,
   //dependencies.akkaActorTyped,
@@ -223,7 +223,7 @@ lazy val commonSettings = Seq(
 
 lazy val settings = commonSettings 
 
-lazy val kube_akka_word_wordcount_cluster_assemblySettings = Seq(
+lazy val kube_akka_wordcount_cluster_assemblySettings = Seq(
   assemblyJarName in assembly := name.value + ".jar",
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", xs @ _*) => MergeStrategy.discard
@@ -366,7 +366,7 @@ lazy val global = project
     ono_cluster_master,
     ono_cluster_node,
     ono_cluster_client,
-    kube_akka_word_wordcount_cluster
+    kube_akka_wordcount_cluster
   )
 
 
@@ -498,11 +498,11 @@ lazy val akka_streams = project
     akkaAssemblySettings,
     libraryDependencies ++= akkaTrainingDependencies,
   )
-lazy val kube_akka_word_wordcount_cluster = project
-  .in(file("kube_akka_word_wordcount_cluster"))
+lazy val kube_akka_wordcount_cluster = project
+  .in(file("kube_akka_wordcount_cluster"))
   .settings(
-    name := "kube_akka_word_wordcount_cluster",
+    name := "kube_akka_wordcount_cluster",
     settings,
-    kube_akka_word_wordcount_cluster_assemblySettings,
-    libraryDependencies ++= kube_akka_word_wordcount_cluster_dependencies,
+    kube_akka_wordcount_cluster_assemblySettings,
+    libraryDependencies ++= kube_akka_wordcount_cluster_dependencies,
   )

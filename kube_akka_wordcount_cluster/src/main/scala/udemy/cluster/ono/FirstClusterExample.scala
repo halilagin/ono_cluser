@@ -6,6 +6,8 @@ import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberEvent, MemberRemov
 import akka.dispatch.{PriorityGenerator, UnboundedPriorityMailbox}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
+import udemy.cluster.onokube
+import udemy.cluster.onokube.{Aggregator, OnoClusterMaster}
 
 import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success}
@@ -14,12 +16,12 @@ import scala.language.postfixOps
 trait OnoSerializable
 
 object OnoClusteringDomain {
-  case class ProcessFile(filePath: String) extends OnoSerializable
-  case class AssignChunkToWorker(lastIdx:Int, line:String, aggregator:ActorRef) extends OnoSerializable
-  case class ProcessLine(lastIdx:Int, line: String, aggregator:ActorRef) extends OnoSerializable
-  case class ProcessLineResult(lastIdx:Int, count: Int) extends OnoSerializable
-  case class RegisterWorker(address:Address, ref:ActorRef) extends OnoSerializable
-  case class OnoMemberUp(member:Member) extends OnoSerializable
+  case class ProcessFile(filePath: String) extends onokube.OnoSerializable
+  case class AssignChunkToWorker(lastIdx:Int, line:String, aggregator:ActorRef) extends onokube.OnoSerializable
+  case class ProcessLine(lastIdx:Int, line: String, aggregator:ActorRef) extends onokube.OnoSerializable
+  case class ProcessLineResult(lastIdx:Int, count: Int) extends onokube.OnoSerializable
+  case class RegisterWorker(address:Address, ref:ActorRef) extends onokube.OnoSerializable
+  case class OnoMemberUp(member:Member) extends onokube.OnoSerializable
 }
 
 class OnoClusteringMailBox (settings: ActorSystem.Settings, config:Config) extends UnboundedPriorityMailbox (
@@ -33,15 +35,15 @@ class RemoteAddressExtensionImpl(system: ExtendedActorSystem) extends Extension 
   def address = system.provider.getDefaultAddress
 }
 
-object RemoteAddressExtension extends ExtensionId[RemoteAddressExtensionImpl]  with ExtensionIdProvider {
-  override def lookup = RemoteAddressExtension
-  override def createExtension(system: ExtendedActorSystem) = new RemoteAddressExtensionImpl(system)
-  override def get(system: ActorSystem): RemoteAddressExtensionImpl = super.get(system)
+object RemoteAddressExtension extends ExtensionId[onokube.RemoteAddressExtensionImpl]  with ExtensionIdProvider {
+  override def lookup = onokube.RemoteAddressExtension
+  override def createExtension(system: ExtendedActorSystem) = new onokube.RemoteAddressExtensionImpl(system)
+  override def get(system: ActorSystem): onokube.RemoteAddressExtensionImpl = super.get(system)
 }
 
 
 class OnoClusterMaster extends Actor with ActorLogging {
-  import OnoClusteringDomain._
+  import udemy.cluster.onokube.OnoClusteringDomain._
   import context.dispatcher
   implicit val timeout =  Timeout(3 seconds)
 
@@ -132,7 +134,7 @@ class OnoClusterMaster extends Actor with ActorLogging {
 
 
 class OnoClusterWorker extends Actor with ActorLogging {
-  import OnoClusteringDomain._
+  import udemy.cluster.onokube.OnoClusteringDomain._
 
   def work(text:String): Int = text.split(" ").length
 
@@ -141,7 +143,7 @@ class OnoClusterWorker extends Actor with ActorLogging {
     case ProcessLine(lastIdx, line, aggregator) =>
 
       //val address = self.path.toStringWithAddress(self.path.address)
-      val address = RemoteAddressExtension(context.system).address
+      val address = onokube.RemoteAddressExtension(context.system).address
       val workResult:Int = work(line)
       //Thread.sleep(500)
       aggregator ! ProcessLineResult(lastIdx, workResult)
@@ -149,7 +151,7 @@ class OnoClusterWorker extends Actor with ActorLogging {
 }
 
 class Aggregator extends Actor with ActorLogging {
-  import OnoClusteringDomain._
+  import udemy.cluster.onokube.OnoClusteringDomain._
 
   override def receive: Receive = online(0,0)
 
@@ -168,7 +170,7 @@ class Aggregator extends Actor with ActorLogging {
 }
 
 object OnoClusterSeedNodes extends App {
-  import OnoClusteringDomain._
+  import udemy.cluster.onokube.OnoClusteringDomain._
   def createNode(name:String, role:String, port:Int, props:Props): Unit = {
     val config = ConfigFactory.parseString(
       s"""
@@ -191,8 +193,8 @@ object OnoClusterSeedNodes extends App {
   }
 
   createNode("master", "master", 13551, Props[OnoClusterMaster])
-  createNode("worker", "worker", 13552, Props[OnoClusterWorker])
-  createNode("worker", "worker", 13553, Props[OnoClusterWorker])
+  createNode("worker", "worker", 13552, Props[onokube.OnoClusterWorker])
+  createNode("worker", "worker", 13553, Props[onokube.OnoClusterWorker])
   //AdditionalWorker.up
 }
 
@@ -208,7 +210,7 @@ object AdditionalWorker extends App {
       .withFallback(ConfigFactory.load("udemy/ono/OnoClustering.conf"))
 
     val system = ActorSystem("OnoCluster1", config)
-    system.actorOf(Props[OnoClusterWorker], "worker")
+    system.actorOf(Props[onokube.OnoClusterWorker], "worker")
   }
   up
 }
