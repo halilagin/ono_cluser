@@ -1,4 +1,4 @@
-package udemy.cluster.onokube
+package udemy.cluster.onokube2
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Address, ExtendedActorSystem, Extension, ExtensionId, ExtensionIdProvider, Props, ReceiveTimeout}
 import akka.cluster.ClusterEvent._
@@ -15,12 +15,17 @@ import scala.util.{Failure, Random, Success}
 trait OnoSerializable
 
 object OnoClusteringDomain {
-  val cluserConfigPath:String = "udemy/ono/OnoKubeClustering.conf"
-  val clusterName:String = "OnoKubeCluster1"
+  val cluserConfigPath:String = "udemy/ono/OnoKubeClusteringV2.conf"
+  val clusterName:String = "OnoKubeCluster2"
   val masterRoleName:String = "master"
   val workerRoleName:String = "worker"
   val masterName:String = "master"
   val workerName:String = "worker"
+
+  val seedNode1Name:String = "SeedNode1"
+  val seedNode2Name:String = "SeedNode2"
+  val seedNodeRoleName:String = "SeedNode"
+
   val inputFilePath = "ono_cluster_master/src/main/resources/lipsum.txt"
 
   case class ProcessFile(filePath: String) extends OnoSerializable
@@ -177,8 +182,32 @@ class Aggregator extends Actor with ActorLogging {
   }
 }
 
-object OnoClusterSeedNodes extends App {
+
+class OnoClusterSeedNode extends Actor with ActorLogging {
   import OnoClusteringDomain._
+  implicit val timeout =  Timeout(3 seconds)
+  import context.dispatcher
+
+  val cluster = Cluster(context.system)
+  override def preStart(): Unit = {
+    cluster.subscribe(
+      self,
+      initialStateMode = InitialStateAsEvents,
+      classOf[MemberEvent],
+      classOf[UnreachableMember]
+    )
+  }
+
+  override def postStop(): Unit = {
+    cluster.unsubscribe(self)
+  }
+
+  override def receive: Receive = {
+    case m: Any => println("SeedNode: unmanaged event:", m)
+  }
+}
+
+object OnoClusterSeedNodes extends App {
   def createNode(name:String, role:String, port:Int, props:Props): Unit = {
     val config = ConfigFactory.parseString(
       s"""
@@ -188,15 +217,28 @@ object OnoClusterSeedNodes extends App {
          |""".stripMargin
     ).withFallback(ConfigFactory.load(OnoClusteringDomain.cluserConfigPath))
     val system = ActorSystem(OnoClusteringDomain.clusterName, config)
-    import system.dispatcher
     val actor = system.actorOf(props, name)
   }
 
-  def run: Unit = {
-    createNode(OnoClusteringDomain.masterName, OnoClusteringDomain.masterRoleName, 14551, Props[OnoClusterMaster])
-    createNode(OnoClusteringDomain.workerName, OnoClusteringDomain.workerRoleName, 14552, Props[OnoClusterWorker])
-    createNode(OnoClusteringDomain.workerName, OnoClusteringDomain.workerRoleName, 14553, Props[OnoClusterWorker])
+  def createSeedNode1: Unit = {
+    createNode(OnoClusteringDomain.seedNode1Name, OnoClusteringDomain.seedNodeRoleName, 14551, Props[OnoClusterSeedNode])
+    createNode(OnoClusteringDomain.seedNode2Name, OnoClusteringDomain.seedNodeRoleName, 14552, Props[OnoClusterSeedNode])
   }
+//  def createSeedNode2: Unit = {
+//    createNode(OnoClusteringDomain.seedNode2Name, OnoClusteringDomain.seedNodeRoleName, 14552, Props[OnoClusterMaster])
+//  }
+
+  def createMaster: Unit = {
+    createNode(OnoClusteringDomain.masterName, OnoClusteringDomain.masterRoleName, 14560, Props[OnoClusterMaster])
+  }
+
+
+  def createWorkers: Unit = {
+        createNode(OnoClusteringDomain.workerName, OnoClusteringDomain.workerRoleName, 14575, Props[OnoClusterWorker])
+        //createNode(OnoClusteringDomain.workerName, OnoClusteringDomain.workerRoleName, 14576, Props[OnoClusterWorker])
+  }
+
+
 }
 
 class OnoClusterClient extends Actor with ActorLogging {
@@ -275,8 +317,21 @@ object RunOnoClusterClient extends App {
   }
 }
 
+
 object OnoClusterSeedNodes1 extends App {
-  OnoClusterSeedNodes.run
+  OnoClusterSeedNodes.createSeedNode1
+
+}
+//object OnoClusterSeedNodes2 extends App {
+//  OnoClusterSeedNodes.createSeedNode2
+//}
+
+object OnoClusterCreateMaster extends App {
+  OnoClusterSeedNodes.createMaster
+}
+
+object OnoClusterCreateWorkers extends App {
+  OnoClusterSeedNodes.createWorkers
 }
 object AdditionalWorker1 extends App {
   AdditionalWorker.up

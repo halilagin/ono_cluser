@@ -228,9 +228,8 @@ lazy val kube_akka_wordcount_cluster_assemblySettings = Seq(
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", xs @ _*) => MergeStrategy.discard
     case "application.conf"            => MergeStrategy.concat
-    case x =>
-      val oldStrategy = (assemblyMergeStrategy in assembly).value
-      oldStrategy(x)
+    case "reference.conf"            => MergeStrategy.concat
+    case x => MergeStrategy.first
   }
 )
 
