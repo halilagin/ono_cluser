@@ -27,8 +27,8 @@ object OnoClusteringDomain {
   val seedNode2Name:String = "SeedNode2"
   val seedNodeRoleName:String = "SeedNode"
 
-  val inputFilePath = "ono_cluster_master/src/main/resources/lipsum.txt"
 
+  case class StartProcessFile(dummy:String) extends OnoSerializable
   case class ProcessFile(filePath: String) extends OnoSerializable
   case class AssignChunkToWorker(lastIdx:Int, line:String, aggregator:ActorRef) extends OnoSerializable
   case class ProcessLine(lastIdx:Int, line: String, aggregator:ActorRef) extends OnoSerializable
@@ -123,7 +123,13 @@ class OnoClusterMaster extends Actor with ActorLogging {
 
   def handleJob:Receive = {
 
+    case StartProcessFile(_) =>
+      val config = ConfigFactory.load(OnoClusteringDomain.cluserConfigPath)
+      val filePath = config.getString("ono.cluster.master.filePath")
+      println("master:handleJob:filePath", filePath)
+      self ! ProcessFile(filePath)
     case ProcessFile(filePath) =>
+      println("master:handleJob",filePath)
       val strings = scala.io.Source.fromFile(filePath).getLines().toList
       //println("filePath.strings.length", strings.length)
       val aggregator = context.actorOf(Props[Aggregator], "aggregator")
@@ -209,29 +215,32 @@ class OnoClusterSeedNode extends Actor with ActorLogging {
 }
 
 object OnoClusterSeedNodes extends App {
-
-  def createNode(clusterName:String, name:String, role:String, hostname:String,  port:Int, props:Props): Unit = {
-    val config = ConfigFactory.parseString(
+  def partialConfig(role:String, hostname:String,  port:Int): Config ={
+    ConfigFactory.parseString(
       s"""
          | akka.cluster.roles = ["$role"]
          | akka.remote.artery.canonical.port = $port
          | akka.remote.artery.canonical.hostname = "${hostname}"
-         |""".stripMargin
-    ).withFallback(ConfigFactory.load(OnoClusteringDomain.cluserConfigPath))
+         |""".stripMargin)
+  }
+
+  def createNode(clusterName:String, name:String, role:String, hostname:String,  port:Int, props:Props): ActorRef = {
+    var config:Config = null
+    OnoUtil.siteLocalAddress() match {
+      case Some(siteAddress) =>
+        config = partialConfig(role, siteAddress, port)
+          .withFallback(ConfigFactory.load(OnoClusteringDomain.cluserConfigPath))
+      case _ =>
+        config = partialConfig(role, hostname, port)
+          .withFallback(ConfigFactory.load(OnoClusteringDomain.cluserConfigPath))
+    }
     val system = ActorSystem(clusterName, config)
-    val actor = system.actorOf(props, name)
+    system.actorOf(props, name)
   }
 
   def createSeedNode1(config: Config): Unit = {
-
     val seedUrls:Array[String] = config.getList("akka.cluster.seed-nodes").unwrapped.toArray.map(_.toString)
     seedUrls.foreach{url =>
-//      println("url", url)
-//      val clustername_and_hostport =  url.substring("akka://".length).split("@")
-//      val clusterName:String = clustername_and_hostport(0)
-//      val host_and_port = clustername_and_hostport(1).split(":")
-//      val (host,port) = (host_and_port(0), host_and_port(1) )
-//      println(clusterName, host, port)
       val clusterName = url.substring("akka://".length, url.indexOf("@"))
       val host = url.substring(url.indexOf("@")+1,url.lastIndexOf(":") )
       val port = url.substring(url.lastIndexOf(":")+1).toInt
@@ -267,16 +276,24 @@ object OnoClusterSeedNodes extends App {
     createNode(config.getString("ono.cluster.name"),
       config.getString("ono.cluster.worker.name"),
       config.getString("ono.cluster.worker.roleName"),
-      config.getString("ono.cluster.master.hostname"),
-      config.getInt("ono.cluster.master.port"),
+      config.getString("ono.cluster.worker.hostname"),
+      config.getInt("ono.cluster.worker.port"),
       Props[OnoClusterWorker]
     )
+  }
 
-    //createNode(OnoClusteringDomain.workerName, OnoClusteringDomain.workerRoleName, 14576, Props[OnoClusterWorker])
+  def createClient(config: Config): Unit = {
+    createNode(config.getString("ono.cluster.name"),
+      config.getString("ono.cluster.client.name"),
+      config.getString("ono.cluster.client.roleName"),
+      config.getString("ono.cluster.client.hostname"),
+      config.getInt("ono.cluster.client.port"),
+      Props[OnoClusterClient]
+    )
   }
 
 
-}
+}//class
 
 class OnoClusterClient extends Actor with ActorLogging {
   import OnoClusteringDomain._
@@ -304,7 +321,9 @@ class OnoClusterClient extends Actor with ActorLogging {
       val address = s"${member.address}/user/master"
       context.actorSelection(address).resolveOne.onComplete {
         case Success(masterRef) =>
-          masterRef ! ProcessFile(OnoClusteringDomain.inputFilePath)
+          println("client:send to master:StartProcessFile", member.address)
+
+          masterRef ! StartProcessFile("")
         case Failure(ex) =>
           println(s"OnoClusterClient:resolve:master:failure:$ex")
       }
@@ -376,5 +395,6 @@ object AdditionalWorker1 extends App {
   AdditionalWorker.up
 }
 object RunOnoClusterClient1 extends App {
-  RunOnoClusterClient.up
+  val config = ConfigFactory.load(OnoClusteringDomain.cluserConfigPath)
+  OnoClusterSeedNodes.createClient(config)
 }

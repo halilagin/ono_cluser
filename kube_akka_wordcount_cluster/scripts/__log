@@ -1,0 +1,52 @@
+Name:         akka-http2-7b5496ffc9-nxl2l
+Namespace:    test
+Priority:     0
+Node:         minikube/192.168.49.2
+Start Time:   Tue, 14 Sep 2021 21:17:36 +0100
+Labels:       app=akka-http2
+              pod-template-hash=7b5496ffc9
+Annotations:  <none>
+Status:       Running
+IP:           172.17.0.6
+IPs:
+  IP:           172.17.0.6
+Controlled By:  ReplicaSet/akka-http2-7b5496ffc9
+Containers:
+  akka-http2:
+    Container ID:   docker://12d2264afc3333ce7e3ccd65b7a62c11877b0e3b4b3d67d74c5086845730f887
+    Image:          onomoly/akka-http2:0.0.1
+    Image ID:       docker://sha256:7c301512e6474fe43c0839c23e0b4f10e3af45c28d657d1e1763e50d1ca9aa93
+    Port:           8081/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Tue, 14 Sep 2021 21:17:36 +0100
+    Ready:          True
+    Restart Count:  0
+    Environment:
+      APP_LIB_DIR:  ./lib
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-7r694 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+Volumes:
+  kube-api-access-7r694:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    ConfigMapOptional:       <nil>
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  2m4s  default-scheduler  Successfully assigned test/akka-http2-7b5496ffc9-nxl2l to minikube
+  Normal  Pulled     2m4s  kubelet            Container image "onomoly/akka-http2:0.0.1" already present on machine
+  Normal  Created    2m4s  kubelet            Created container akka-http2
+  Normal  Started    2m4s  kubelet            Started container akka-http2
