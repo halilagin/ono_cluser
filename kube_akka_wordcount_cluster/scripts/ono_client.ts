@@ -7,7 +7,7 @@ import * as fs from 'fs';
 
 const path = require('path');
 
-let KUBE_POD_NAME = "ono-seednodes";
+let KUBE_POD_NAME = "ono-client";
 let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
 let KUBE_POD_PORT = 2551;
 let KUBE_SRV_PORT = 2551;
@@ -18,7 +18,7 @@ let KUBE_NAMESPACE = "ono-cluster-demo";
 var DOCKERTAG = `ono_cluster_demo/${KUBE_POD_NAME}:0.0.1`;
 let JARFILE = "kube_akka_wordcount_cluster.jar";
 let SCALA_VERSION = "2.13";
-let MAINCLASS = "udemy.cluster.onokube3.OnoClusterSeedNodes1";
+let MAINCLASS = "udemy.cluster.onokube3.RunOnoClusterClient1";
 let script_path = path.dirname(__filename);
 let rootProjectPath = script_path.split("/").slice(0,-2).join("/");
 let projectPath = script_path.split("/").slice(0,-1).join("/");
@@ -44,7 +44,11 @@ function tmpFilePath() {
 }
 
 async function build(args:string[]) {
-    console.log("build", args);
+    if (args.length<1){
+        console.log("usage: build seed_node_ip");
+        return ;
+    }
+    let seedNodeIp = args[0];
 
     await $`mkdir -p ${dockerDirPath}`;
     await $`cp ${jarPath} ${dockerDirPath}`;
@@ -54,7 +58,7 @@ let startupScriptContent = `
 #ip_addr=\`ip addr |grep inet|grep -v 127.0.0.1 |awk  '{print $2}'|awk -F\/ '{print $1}'\`
 #MY_POD_IP is defined in kube deployment
 ip_addr=\${MY_POD_IP}
-java -cp /app/${JARFILE} -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:MaxRAMFraction=2  -Dono.cluster.seednodes.node1.hostname="\${ip_addr}" -Dono.cluster.seednodes.node2.hostname="\${ip_addr}"  ${MAINCLASS}
+java -cp /app/${JARFILE} -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:MaxRAMFraction=2  -Dono.cluster.seednodes.node1.hostname="${seedNodeIp}" -Dono.cluster.seednodes.node2.hostname="${seedNodeIp}"  ${MAINCLASS}
 `;
 
     fs.writeFile(startupScriptPath, startupScriptContent, function (err:any) {

@@ -7,7 +7,7 @@ import * as fs from 'fs';
 
 const path = require('path');
 
-let KUBE_POD_NAME = "ono-seednodes";
+let KUBE_POD_NAME = "ono-master";
 let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
 let KUBE_POD_PORT = 2551;
 let KUBE_SRV_PORT = 2551;
@@ -18,7 +18,7 @@ let KUBE_NAMESPACE = "ono-cluster-demo";
 var DOCKERTAG = `ono_cluster_demo/${KUBE_POD_NAME}:0.0.1`;
 let JARFILE = "kube_akka_wordcount_cluster.jar";
 let SCALA_VERSION = "2.13";
-let MAINCLASS = "udemy.cluster.onokube3.OnoClusterSeedNodes1";
+let MAINCLASS = "udemy.cluster.onokube3.OnoClusterCreateMaster";
 let script_path = path.dirname(__filename);
 let rootProjectPath = script_path.split("/").slice(0,-2).join("/");
 let projectPath = script_path.split("/").slice(0,-1).join("/");
@@ -30,7 +30,8 @@ let startupScriptFilename="java_startup.sh";
 let startupScriptPath = `${dockerDirPath}/${startupScriptFilename}`;
 let jarPath = `${projectPath}/target/scala-${SCALA_VERSION}/${JARFILE}`;
 let rootDockerEnvPath = `${rootDockerDirPath}/docker.env`;
-
+let inputFilename="lipsum.txt";
+let inputFilePath=`${projectPath}/src/main/resources/${inputFilename}`;
 
 function test(){
     console.log("a/b/c/d".split("/").slice(-1)[0]);
@@ -44,17 +45,22 @@ function tmpFilePath() {
 }
 
 async function build(args:string[]) {
-    console.log("build", args);
+    if (args.length<1){
+        console.log("usage: build seed_node_ip");
+        return ;
+    }
+    let seedNodeIp = args[0];
 
     await $`mkdir -p ${dockerDirPath}`;
     await $`cp ${jarPath} ${dockerDirPath}`;
+    await $`cp ${inputFilePath} ${dockerDirPath}`;
     //java -cp ${jarPath} -Dono.cluster.seednodes.node1.hostname='${ipAddress}' -Dono.cluster.seednodes.node2.hostname='${ipAddress}'  udemy.cluster.onokube3.OnoClusterSeedNodes1
 
 let startupScriptContent = `
 #ip_addr=\`ip addr |grep inet|grep -v 127.0.0.1 |awk  '{print $2}'|awk -F\/ '{print $1}'\`
 #MY_POD_IP is defined in kube deployment
 ip_addr=\${MY_POD_IP}
-java -cp /app/${JARFILE} -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:MaxRAMFraction=2  -Dono.cluster.seednodes.node1.hostname="\${ip_addr}" -Dono.cluster.seednodes.node2.hostname="\${ip_addr}"  ${MAINCLASS}
+java -cp /app/${JARFILE} -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:MaxRAMFraction=2 -Dono.cluster.seednodes.node1.hostname="${seedNodeIp}" -Dono.cluster.seednodes.node2.hostname="${seedNodeIp}" -Dono.cluster.master.filePath="/app/${inputFilename}"  ${MAINCLASS}
 `;
 
     fs.writeFile(startupScriptPath, startupScriptContent, function (err:any) {
@@ -68,6 +74,7 @@ RUN mkdir -p /app
 WORKDIR /app
 COPY ${startupScriptFilename}  /app
 COPY ${JARFILE}  /app
+COPY ${inputFilename}  /app
 EXPOSE ${KUBE_POD_PORT}
 #CMD ["java", "-cp", "/app/${JARFILE}", "${MAINCLASS}"]
 CMD ["sh", "/app/${startupScriptFilename}"]
