@@ -323,7 +323,7 @@ class OnoClusterClient extends Actor with ActorLogging {
         case Success(masterRef) =>
           println("client:send to master:StartProcessFile", member.address)
 
-          masterRef ! StartProcessFile("/Users/halilagin/root/github/ono_cluster/kube_akka_wordcount_cluster/src/main/resources/lipsum.txt")
+          masterRef ! StartProcessFile("/Users/halilagin/github/ono_cluster/kube_akka_wordcount_cluster/src/main/resources/lipsum.txt")
         case Failure(ex) =>
           println(s"OnoClusterClient:resolve:master:failure:$ex")
       }
