@@ -323,7 +323,7 @@ class OnoClusterClient extends Actor with ActorLogging {
         case Success(masterRef) =>
           println("client:send to master:StartProcessFile", member.address)
 
-          masterRef ! StartProcessFile("")
+          masterRef ! StartProcessFile("/Users/halilagin/root/github/ono_cluster/kube_akka_wordcount_cluster/src/main/resources/lipsum.txt")
         case Failure(ex) =>
           println(s"OnoClusterClient:resolve:master:failure:$ex")
       }
@@ -333,13 +333,13 @@ class OnoClusterClient extends Actor with ActorLogging {
 
 
 object AdditionalWorker extends App {
-  def up = {
+  def up(port:Int) = {
     OnoUtil.siteLocalAddress() match {
       case Some(siteAddress) =>
         val config = ConfigFactory.parseString(
           s"""
              |akka.cluster.roles = ["worker"]
-             |akka.remote.artery.canonical.port = 14601
+             |akka.remote.artery.canonical.port = $port
              |akka.remote.artery.canonical.hostname = "$siteAddress"
          """.stripMargin)
           .withFallback(ConfigFactory.load(OnoClusteringDomain.cluserConfigPath))
@@ -392,7 +392,10 @@ object OnoClusterCreateWorkers extends App {
   OnoClusterSeedNodes.createWorkers(config)
 }
 object AdditionalWorker1 extends App {
-  AdditionalWorker.up
+  AdditionalWorker.up(14601)
+}
+object AdditionalWorker2 extends App {
+  AdditionalWorker.up(14602)
 }
 object RunOnoClusterClient1 extends App {
   val config = ConfigFactory.load(OnoClusteringDomain.cluserConfigPath)
