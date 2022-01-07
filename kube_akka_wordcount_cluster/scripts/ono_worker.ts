@@ -8,7 +8,7 @@ import * as fs from 'fs';
 const path = require('path');
 
 let KUBE_POD_NAME = "ono-worker";
-let KUBE_DEP_NAME = `${KUBE_POD_NAME}-dep`;
+let KUBE_DEP_NAME = `${KUBE_POD_NAME}-3-dep`;
 let KUBE_POD_PORT = 2551;
 let KUBE_SRV_PORT = 2551;
 let KUBE_SRV_IP = "10.96.100.1";
