@@ -11,4 +11,5 @@ object OnoUtil {
       .flatMap(_.getInetAddresses.asScala)
       .find(_.isSiteLocalAddress)
       .map(_.getHostAddress)
+
 }

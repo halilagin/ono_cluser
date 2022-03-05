@@ -123,10 +123,7 @@ class OnoClusterMaster extends Actor with ActorLogging {
 
   def handleJob:Receive = {
 
-    case StartProcessFile(_) =>
-      val config = ConfigFactory.load(OnoClusteringDomain.cluserConfigPath)
-      val filePath = config.getString("ono.cluster.master.filePath")
-      println("master:handleJob:filePath", filePath)
+    case StartProcessFile(filePath) =>
       self ! ProcessFile(filePath)
     case ProcessFile(filePath) =>
       println("master:handleJob",filePath)
@@ -322,8 +319,10 @@ class OnoClusterClient extends Actor with ActorLogging {
       context.actorSelection(address).resolveOne.onComplete {
         case Success(masterRef) =>
           println("client:send to master:StartProcessFile", member.address)
-
-          masterRef ! StartProcessFile("/Users/halilagin/github/ono_cluster/kube_akka_wordcount_cluster/src/main/resources/lipsum.txt")
+          val config = ConfigFactory.load(OnoClusteringDomain.cluserConfigPath)
+          val filePath = config.getString("ono.cluster.master.filePath")
+          println("master:handleJob:filePath", filePath)
+          masterRef ! StartProcessFile(filePath)
         case Failure(ex) =>
           println(s"OnoClusterClient:resolve:master:failure:$ex")
       }

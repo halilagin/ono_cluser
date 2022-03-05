@@ -4,15 +4,19 @@ import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Address, Extended
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
 import akka.dispatch.{PriorityGenerator, UnboundedPriorityMailbox}
+import akka.pattern.ask
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import udemy.cluster.ono.OnoUtil
 
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Random, Success}
 
 trait OnoSerializable
+trait OnoApiCommand extends OnoSerializable
+trait OnoInternalCommand extends OnoSerializable
 
 object OnoClusteringDomain {
   val clusterConfigPath:String = "udemy/ono/OnoKubeClusteringV4.conf"
@@ -28,19 +32,32 @@ object OnoClusteringDomain {
   val seedNodeRoleName:String = "SeedNode"
 
 
-  case class StartProcessFile(dummy:String) extends OnoSerializable
-  case class ProcessFile(filePath: String) extends OnoSerializable
-  case class AssignChunkToWorker(lastIdx:Int, line:String, aggregator:ActorRef) extends OnoSerializable
-  case class ProcessLine(lastIdx:Int, line: String, aggregator:ActorRef) extends OnoSerializable
-  case class ProcessLineResult(lastIdx:Int, count: Int) extends OnoSerializable
-  case class RegisterWorker(address:Address, ref:ActorRef) extends OnoSerializable
-  case class OnoMemberUp(member:Member) extends OnoSerializable
-  case class SendStartCommandToClusterMaster() extends OnoSerializable
+  //messages between actors
+  case class AskActiveState(state:Option[Boolean]) extends OnoInternalCommand
+  case class IncrementOffset(inc:Int) extends OnoInternalCommand
+  case class GetOffset() extends OnoInternalCommand
+  case class SetOffset(offset:Int) extends OnoInternalCommand
+  case class StartProcessFileInternal(initialOffset:Int) extends OnoInternalCommand
+
+  case class AssignChunkToWorker(lastIdx:Int,  line:String, aggregator:ActorRef) extends OnoInternalCommand
+  case class StartProcessLine(lastIdx:Int, line: String) extends OnoInternalCommand
+
+  case class ProcessLine(lastIdx:Int,  line: String, aggregator:ActorRef) extends OnoInternalCommand
+  case class ProcessLineResult(lastIdx:Int,  count: Int) extends OnoInternalCommand
+
+  //messages from http to cluster actors
+  case class RegisterWorker(address:Address, ref:ActorRef) extends OnoApiCommand
+  case class CommandMasterNodeStart(filePath:String, offset: Int) extends OnoApiCommand
+  case class CommandMasterNodeStop() extends OnoApiCommand
+  case class CommandMasterNodeGetOffset() extends OnoApiCommand
+  case class CommandMasterNodeResume() extends OnoApiCommand
+
 }
 
 class OnoClusteringMailBox (settings: ActorSystem.Settings, config:Config) extends UnboundedPriorityMailbox (
   PriorityGenerator {
     case _: MemberEvent => 0
+    case _: OnoApiCommand => 2
     case _ => 4
   }
 )
@@ -56,16 +73,30 @@ object RemoteAddressExtension extends ExtensionId[RemoteAddressExtensionImpl]  w
 }
 
 
+object MasterNodeWorkingStatus extends Enumeration
+{
+  type Main = Value
+
+  // Assigning values
+  val Initialized = Value(0, "Thriller")
+  val Stopped = Value(1,"Horror")
+  val Resumed = Value(2,"Comedy")
+  val fourth = Value(3, "Romance")
+
+
+}
+
 class OnoClusterMaster extends Actor with ActorLogging {
   import OnoClusteringDomain._
   import context.dispatcher
-  implicit val timeout =  Timeout(3 seconds)
+  implicit val timeout =  Timeout(10 seconds)
 
+  val aggregator = context.actorOf(Props[Aggregator], "aggregator")
   val cluster = Cluster(context.system)
-
+  var active:Boolean = false
+  var offset:Int = 0
   var workers: Map[Address, ActorRef] = Map()
   var pendingMembers: Map[Address, ActorRef] = Map()
-
   override def preStart(): Unit = {
     cluster.subscribe(
       self,
@@ -79,15 +110,13 @@ class OnoClusterMaster extends Actor with ActorLogging {
     cluster.unsubscribe(self)
   }
 
-  override def receive:Receive = handleMemberEvents.orElse(handleRegisterWorker).orElse(handleJob)
+  override def receive:Receive = handleMemberEvents
+    .orElse(handleRegisterWorker)
+    .orElse(handleProcessingMessages)
 
   def handleMemberEvents:Receive = {
-    case MemberUp(member) =>
+    case MemberUp(member) if member.hasRole("worker")  =>
       println("MemberUp", member.address)
-      if (member.hasRole("worker"))
-        self ! OnoMemberUp(member)
-    case OnoMemberUp(member)  =>
-      println("OnoMemberUp", member.address)
       if (pendingMembers.contains(member.address))
         pendingMembers = pendingMembers - member.address
       else {
@@ -113,6 +142,8 @@ class OnoClusterMaster extends Actor with ActorLogging {
     case m: MemberEvent =>
       println(s"new member: $m")
 
+
+
   }
 
   def handleRegisterWorker: Receive = {
@@ -121,42 +152,115 @@ class OnoClusterMaster extends Actor with ActorLogging {
       workers = workers ++ Map(address -> actorRef)
   }
 
-  def handleJob:Receive = {
 
-    case StartProcessFile(_) =>
-      val config = ConfigFactory.load(OnoClusteringDomain.clusterConfigPath)
-      val filePath = config.getString("ono.cluster.master.filePath")
-      println("master:handleJob:filePath", filePath)
-      self ! ProcessFile(filePath)
-    case ProcessFile(filePath) =>
-      println("master:handleJob",filePath)
-      val strings = scala.io.Source.fromFile(filePath).getLines().toList
-      //println("filePath.strings.length", strings.length)
-      val aggregator = context.actorOf(Props[Aggregator], "aggregator")
-      strings.foreach { line  =>
-        self ! AssignChunkToWorker(strings.length-1, line, aggregator)
-      }//foreach
-    case AssignChunkToWorker(lastIdx, line, aggregator) =>
-      val workerList = workers.keys.toList
-      val workersExist = workerList.size > 0
-      if (workersExist) {
-        val workerAddress = workerList(Random.nextInt(workerList.size))
-        val worker = workers(workerAddress)
-        println("sending to worker:", workerAddress)
-        //we pass to self to get out of the thread so that master can receive some events
-        worker !  ProcessLine(lastIdx, line, aggregator)
-        Thread.sleep(20)
+    //  def handleMessagesWhileOnline(active:Boolean):Receive = {
+//    case CommandMasterNodeDeactivate(dummy) =>
+//      println("MasterNode: deactivated")
+//      context.become(handleMemberEvents.orElse(handleRegisterWorker).orElse(handleMessagesWhileOffline(false)))
+//  }
+
+  var sourceFilePath:String = ""
+
+  def handleProcessingMessages: Receive = {
+      case IncrementOffset(inc:Int) =>
+        offset += inc
+      case g: GetOffset =>
+        sender ! Some(offset)
+      case SetOffset(newOffset) =>
+        offset = newOffset
+      case c: CommandMasterNodeGetOffset =>
+        sender ! Some(offset)
+
+      case AskActiveState(state) => state match {
+        case Some(s) =>
+          log.info(s"master: state changed: before:$active, after: $s")
+          active = s
+          sender ! Some(active)
+        case None => sender ! Some(active)
       }
 
-    case m: Any => println("unmanaged event:", m)
+      case c@CommandMasterNodeStart(filePath, offset) =>
+        sourceFilePath = filePath
+        log.info(s"master:CommandMasterNodeStart, $filePath, $sourceFilePath, $c")
+        //context.become(handleMemberEvents.orElse(handleRegisterWorker).orElse(handleProcessingMessages(filePath,  offset)))
+        (self ? AskActiveState(Some(true)) ).foreach(a => self ! StartProcessFileInternal( 0))
+
+
+      case c@CommandMasterNodeResume() =>
+        log.info(s"master:CommandMasterNodeResume,  $sourceFilePath, $c")
+        //context.become(handleMemberEvents.orElse(handleRegisterWorker).orElse(handleProcessingMessages(filePath,  offset)))
+        (self ? AskActiveState(Some(true)) ).foreach(a => self ! StartProcessFileInternal( offset))
+
+
+      case c:CommandMasterNodeStop =>
+        log.info("MasterNode: deactivated")
+        //context.become(handleMemberEvents.orElse(handleRegisterWorker).orElse(handleProcessingMessages(filePath,  offset)))
+        (self ? AskActiveState(Some(false)) )
+
+
+
+      case StartProcessFileInternal( initialOffset) =>
+
+        val lines = scala.io.Source.fromFile(sourceFilePath).getLines().toList
+        (self ? GetOffset()).mapTo[Option[Int]].onComplete{
+          case Success(Some(offset)) =>
+            val strings = lines.slice(offset, lines.length)
+            log.info(s"master: offset:$offset, lines.length:${lines.length}, strings.length:${strings.length}")
+            //println("filePath.strings.length", strings.length)
+
+            //open new
+            //child actor de calistir. child actor adresini sakla. active=false geldiginde child actor interrupt et.
+            strings.zipWithIndex.foreach { case (lineString, lineIdx)  =>
+              (self ? AskActiveState(None)).map {
+                case Some(true) => self ! AssignChunkToWorker(strings.length - 1, lineString, aggregator)
+                case None => log.info(s"master state is none") //error state
+              }
+            }//foreach
+          case Failure(ex) => log.error(s"error received $ex")
+
+        }
+
+
+
+      case a@AssignChunkToWorker(lastIdx,  lineString, aggregator) =>
+        val workerList = workers.keys.toList
+        val workersExist = workerList.size > 0
+        if (workersExist) {
+          val workerAddress = workerList(Random.nextInt(workerList.size))
+          val worker = workers(workerAddress)
+          // bellekten çekiyor 8 işlenmeyen.
+          // command s3://ahmet.txt
+          //we pass to self to get out of the thread so that master can receive some events
+
+          (self ? AskActiveState(None) ).map {
+            case Some(true) =>    worker !  ProcessLine(lastIdx, lineString, aggregator)
+            case None       =>    log.error("master active state is none")
+          }
+
+        }
+
+      case m: Any => println("unmanaged event:", m)
   }
 }
 
 
 class OnoClusterWorker extends Actor with ActorLogging {
   import OnoClusteringDomain._
+  implicit val timeout =  Timeout(3 seconds)
+  import context.dispatcher
+  import scala.concurrent.ExecutionContext.Implicits.global
 
-  def work(text:String): Int = text.split(" ").length
+
+  def passCommandToMasterNode(member: akka.cluster.Member, command: OnoApiCommand): Unit = {
+    val address = s"${member.address}/user/master"
+
+  }
+  def work(text:String): Int = {
+    val length  = text.split(" ").length
+
+
+    length
+  }
 
   override def receive: Receive = {
 
@@ -172,19 +276,34 @@ class OnoClusterWorker extends Actor with ActorLogging {
 
 class Aggregator extends Actor with ActorLogging {
   import OnoClusteringDomain._
+  implicit val timeout =  Timeout(3 seconds)
+  import context.dispatcher
+  import scala.concurrent.ExecutionContext.Implicits.global
 
-  override def receive: Receive = online(0,0)
+  override def receive: Receive = online(0, 0)
 
-  def online(idx:Int, total:Int): Receive = {
+  def online( idx:Int, total:Int): Receive = {
     case ProcessLineResult(lastIdx, count) =>
+      if (total % 100 == 0)
+        log.info(s"Aggregator:  processing line $idx/$lastIdx, total: $total")
+
       val newTotal = count + total
       if (idx==lastIdx)
-        println(s"$idx, TOTAL COUNT: ${newTotal}")
-      else
-        context.become(online(idx+1, newTotal))
+        log.info(s"$idx, TOTAL COUNT: ${newTotal}")
+      else {
+        val parentPath = context.parent.path
+        val address = s"${parentPath}"
+        context.actorSelection(address).resolveOne.onComplete {
+          case Success(masterRef) =>
+            masterRef ! IncrementOffset(1)
+          case Failure(ex) =>
+            println(s"Aggregator:resolve:master:failure:$ex")
+        }
+        context.become(online( idx+1, newTotal))
+      }
 
     case ReceiveTimeout =>
-      println(s"TOTAL COUNT: $total")
+      log.info(s"TOTAL COUNT: $total")
       context.setReceiveTimeout(Duration.Undefined)
   }
 }
@@ -360,9 +479,11 @@ object OnoClusterCreateWorkers extends App {
   val config = ConfigFactory.load(OnoClusteringDomain.clusterConfigPath)
   OnoClusterSeedNodes.createWorkers(config)
 }
+
 object AdditionalWorker1 extends App {
   AdditionalWorker.up
 }
+
 object RunOnoClusterClient1 extends App {
   val config = ConfigFactory.load(OnoClusteringDomain.clusterConfigPath)
   OnoClusterSeedNodes.createClient(config)

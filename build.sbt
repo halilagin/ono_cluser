@@ -22,8 +22,10 @@ lazy val dependencies =
 		val slf4jV						= "1.7.30"
 		val jacksonV					= "2.11.1"
 		val yamlV							= "1.27"
-		val typesafeConfigV							= "1.4.1"
+		val typesafeConfigV		= "1.4.1"
+    val scalaLogV         = "3.9.4"
 
+    val scalaLog                = "com.typesafe.scala-logging"          %%      "scala-logging"                 % scalaLogV
     val logback                 = "ch.qos.logback"                      %       "logback-classic"               % logbackV
     val slf4j                   = "org.slf4j"                           %       "slf4j-api"                     % slf4jV
     val akkaActor               = "com.typesafe.akka"                   %%      "akka-actor"                    % akkaV
@@ -72,10 +74,12 @@ val kube_akka_wordcount_cluster_dependencies = Seq(
   dependencies.akkaHttpSprayJson,
   dependencies.akkaHttpTestKit,
   dependencies.akkaSlf4j,
+  dependencies.logback,
+  dependencies.scalaLog,
   dependencies.typesafeConfig,
   dependencies.jackson,
   dependencies.jacksonDatabind,
-  dependencies.logback,
+
   dependencies.scalatest,
   dependencies.akkaStreamTestKit,
   dependencies.akkaCluster,
